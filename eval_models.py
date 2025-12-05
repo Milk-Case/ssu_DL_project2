@@ -41,7 +41,7 @@ def evaluate_tfidf(X_test, y_test, model_file="tfidf_baseline.pkl"):
     }
 
 
-def evaluate_bert(X_test, y_test, model_path="bert_finetuned_sli_td.pth",
+def evaluate_bert(X_test, y_test, model_path="bert_finetuned.pth",
                   bert_model_name="bert-base-uncased", batch_size=16, max_len=256):
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
