@@ -6,8 +6,7 @@ import numpy as np
 from prepare_dataset import prepare_dataset
 from utils import extract_utterances
 
-DEBUG = True
-
+# BoW + TF Norm
 class Vectorizer:
     def __init__(self):
         self.voca = {}
@@ -20,25 +19,28 @@ class Vectorizer:
             voca_set.update(tokens)
             
         self.voca = {word: idx for idx, word in enumerate(sorted(voca_set))}
-        if DEBUG:
-            print(f"Vocabulary size: {len(self.voca)}")
+        print(f"Vocabulary size: {len(self.voca)}")
     
+    # text list -> BoW vector
     def transform(self, texts):
         vec = np.zeros((len(texts), len(self.voca)))
         
         for i, txt in enumerate(texts):
             tokens = txt.lower().split()
             
+            # 단어 등장 횟수 count
             for tok in tokens:
                 if tok in self.voca:
                     vec[i][self.voca[tok]] += 1
-                    
+            
+            # TF Norm        
             vec[i] = vec[i] / np.sum(vec[i])
              
         return vec
     
+# Logistic Regression
 class LogisticRegression:
-    def __init__(self, lr=0.01, epochs=20, l2=0.01):
+    def __init__(self, lr=0.01, epochs=50, l2=0.01):
         self.lr = lr
         self.epochs = epochs
         self.l2 = l2
@@ -49,7 +51,8 @@ class LogisticRegression:
     def init_weights(self, n_features):
         self.W = np.random.normal(0, 0.01, size=n_features)
         self.b = 0
-        
+     
+    # Binary Cross-entropy + L2 penalty   
     def compute_loss(self, y, y_pred):
         eps = 1e-10 
         
@@ -58,6 +61,7 @@ class LogisticRegression:
         
         return ce_loss + l2_loss
     
+    # Full batch gradient descent learning
     def fit(self, x, y):
         x = np.array(x)
         y = np.array(y)
@@ -66,16 +70,21 @@ class LogisticRegression:
         self.init_weights(n_features)
         
         for epoch in range(1, self.epochs + 1):
+            
+            # forward
             z = np.dot(x, self.W) + self.b
             y_pred = self.sigmoid(z)
             
+            # gradient calculation
             dw = (np.dot(x.T, (y_pred - y)) / n_samples) + self.l2 * self.W
             db = np.mean(y_pred - y)
             
+            # parameter update
             self.W -= self.lr * dw
             self.b -= self.lr * db
             
-            if DEBUG and (epoch == 1 or epoch % 5 == 0):
+            # learning progress
+            if epoch == 1 or epoch % 5 == 0:
                 loss = self.compute_loss(y, y_pred)
                 print(f"Epoch {epoch}/{self.epochs} - Loss: {loss:.4f}")
                 
@@ -85,6 +94,7 @@ class LogisticRegression:
         
         return prob, (prob >= 0.5).astype(int)
     
+# Labeling : TD -> 0 / SLI -> 1 
 def encoding(y):
     return np.array([1 if label == "SLI" else 0 for label in y])
     
@@ -100,34 +110,34 @@ def task_train():
     x_train, y_train = dataset['train']
     x_dev, y_dev = dataset['dev']
     
+    # text label encoding
     y_train = encoding(y_train)
     y_dev = encoding(y_dev)
     
+    # vectorizer learning 
     vec = Vectorizer()
     vec.fit(x_train)
     
     x_train = vec.transform(x_train)
     x_dev = vec.transform(x_dev)
     
-    if DEBUG:
-        print("Shapes:", x_train.shape, x_dev.shape)
+    print("Shapes:", x_train.shape, x_dev.shape)
         
-    
+    # LR model learning
     model = LogisticRegression(epochs=50)
     model.fit(x_train, y_train)
     
     dev_acc = eval(model, x_dev, y_dev)
     
-    if DEBUG:
-        print(f"\nDev Accuracy:  {dev_acc:.4f}")
+    print(f"\nDev Accuracy:  {dev_acc:.4f}")
         
+    # export model
     with open("vec.pkl", "wb") as f:
         pickle.dump(vec.voca, f)
         
     np.savez('mod_weights.npz', W=model.W, b=model.b)
     
-    if DEBUG:
-        print("model saved!")
+    print("model saved!")
         
 def task_test():
     dataset = prepare_dataset()
@@ -135,6 +145,7 @@ def task_test():
     
     y_test = encoding(y_test)
     
+    # voca load
     with open('vec.pkl', 'rb') as f:
         voca = pickle.load(f)
     vec = Vectorizer()
@@ -142,29 +153,33 @@ def task_test():
     
     x_test = vec.transform(x_test)
     
+    # weights load
     data = np.load('mod_weights.npz')
     model = LogisticRegression()
     model.W = data['W']
     model.b = data['b']
     
     test_acc = eval(model, x_test, y_test)
-    if DEBUG:
-        print(f"Test Accuracy: {test_acc:.4f}")
+    print(f"Test Accuracy: {test_acc:.4f}")
         
 def task_pred(cha_pth):
+    # voca load
     with open('vec.pkl', 'rb') as f:
         voca = pickle.load(f)
     vec = Vectorizer()
     vec.voca = voca
         
+    # weights load
     data = np.load('mod_weights.npz')
     model = LogisticRegression()
     model.W = data['W']
     model.b = data['b']
     
+    # CHI의 발화 extraction
     utterances = extract_utterances(cha_pth, speakers=['CHI'])
     text = " ".join([utt.clean_text for utt in utterances])
     
+    # vectorize
     x = vec.transform([text])
     
     prob, pred = model.pred(x)
@@ -173,13 +188,12 @@ def task_pred(cha_pth):
     
     label = 'SLI' if pred == 1 else 'TD'
     
-    if DEBUG:
-        print("\nPrediction")
-        print("--------------------")
-        print(f"File: {cha_pth}")
-        print(f"Predicted Label: {label}")
-        print(f"SLI Probability: {prob:.4f}")
-        print(f"TD Probability:  {1 - prob:.4f}")
+    print("\nPrediction")
+    print("--------------------")
+    print(f"File: {cha_pth}")
+    print(f"Predicted Label: {label}")
+    print(f"SLI Probability: {prob:.4f}")
+    print(f"TD Probability:  {1 - prob:.4f}")
         
 def parse_args():
     p = argparse.ArgumentParser()
